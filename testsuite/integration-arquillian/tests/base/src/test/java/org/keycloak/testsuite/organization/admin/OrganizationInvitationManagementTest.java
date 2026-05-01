@@ -25,6 +25,9 @@ import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
 
 import org.keycloak.admin.client.resource.OrganizationResource;
+import org.keycloak.events.admin.OperationType;
+import org.keycloak.events.admin.ResourceType;
+import org.keycloak.representations.idm.AdminEventRepresentation;
 import org.keycloak.representations.idm.OrganizationInvitationRepresentation;
 import org.keycloak.representations.idm.OrganizationRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
@@ -399,6 +402,59 @@ public class OrganizationInvitationManagementTest extends AbstractOrganizationTe
                 assertThat(response.readEntity(String.class), containsString("Organization is disabled"));
             }
         }
+    }
+
+    @Test
+    public void testInviteUserAdminEventContainsRepresentation() {
+        assertAdminEvents.clear();
+
+        sendInvitation("user@test-org.com", "John", "Doe");
+
+        Map<String, Object> expectedRep = Map.of(
+                "email", "user@test-org.com",
+                "firstName", "John",
+                "lastName", "Doe",
+                "organizationId", organizationId,
+                "status", PENDING.toString());
+
+        AdminEventRepresentation event = assertAdminEvents.expect()
+                .realmId(TEST_REALM_NAME)
+                .operationType(OperationType.ACTION)
+                .resourceType(ResourceType.ORGANIZATION_MEMBERSHIP)
+                .resourcePath("organizations/" + organizationId + "/members/invite-user")
+                .representation(expectedRep)
+                .assertEvent();
+
+        assertThat(event.getRepresentation(), notNullValue());
+    }
+
+    @Test
+    public void testDeleteInvitationAdminEventContainsRepresentationAndEmailDetail() {
+        sendInvitation("user@test-org.com", "John", "Doe");
+        String invitationId = organization.invitations().list().get(0).getId();
+
+        assertAdminEvents.clear();
+
+        try (Response response = organization.invitations().delete(invitationId)) {
+            assertThat(response.getStatus(), equalTo(204));
+        }
+
+        Map<String, Object> expectedRep = Map.of(
+                "id", invitationId,
+                "email", "user@test-org.com",
+                "firstName", "John",
+                "lastName", "Doe",
+                "organizationId", organizationId);
+
+        AdminEventRepresentation event = assertAdminEvents.expect()
+                .realmId(TEST_REALM_NAME)
+                .operationType(OperationType.DELETE)
+                .resourceType(ResourceType.ORGANIZATION_MEMBERSHIP)
+                .resourcePath("organizations/" + organizationId + "/invitations/" + invitationId)
+                .representation(expectedRep)
+                .assertEvent();
+
+        assertThat(event.getRepresentation(), notNullValue());
     }
 
     @Test
